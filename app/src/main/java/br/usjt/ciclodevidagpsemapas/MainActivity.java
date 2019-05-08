@@ -1,4 +1,3 @@
-
 package br.usjt.ciclodevidagpsemapas;
 
 import android.Manifest;
@@ -13,6 +12,8 @@ import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.View;
@@ -21,12 +22,24 @@ import android.view.MenuItem;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.toolbox.Volley;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
 import java.util.function.Consumer;
 
 public class MainActivity extends AppCompatActivity {
-
-    private TextView locationTextView;
 
     public static final int REQUEST_CODE_GPS = 1001;
 
@@ -37,6 +50,13 @@ public class MainActivity extends AppCompatActivity {
     private double latitudeAtual;
     private double longitudeAtual;
 
+    private RecyclerView forecastRecyclerView;
+    private ForecastAdapter forecastAdapter;
+    private List<Forecast> previsoes;
+    private RequestQueue requestQueue;
+
+    private Gson gson;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -45,6 +65,15 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
         localizacaoDAO = new LocalizacaoDAO(this);
+
+        requestQueue = Volley.newRequestQueue(this);
+        gson = new GsonBuilder().create();
+        previsoes = new ArrayList<>();
+
+        forecastAdapter = new ForecastAdapter(this, previsoes);
+        forecastRecyclerView = findViewById(R.id.weatherRecyclerView);
+        forecastRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        forecastRecyclerView.setAdapter(forecastAdapter);
 
         FloatingActionButton fab = findViewById(R.id.fab);
         fab.setOnClickListener(new View.OnClickListener() {
@@ -59,8 +88,8 @@ public class MainActivity extends AppCompatActivity {
         locationListener = new LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
-                Localizacao localizacao = new Localizacao(location.getLatitude(), location.getLongitude());
-                locationTextView.setText(String.format("Lat: %f, Long: %f", localizacao.getLatitude(), localizacao.getLongitude()));
+                Localizacao localizacao = new Localizacao(location.getLatitude(), location.getLongitude(), new Date());
+                obtemPrevisoesV5(localizacao.getLatitude(), localizacao.getLongitude());
                 localizacaoDAO.insertLocalizacao(localizacao);
             }
 
@@ -79,17 +108,16 @@ public class MainActivity extends AppCompatActivity {
 
             }
         };
-        locationTextView = findViewById(R.id.locationTextView);
     }
 
     @Override
     protected void onStart() {
         super.onStart();
 
-        if(ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED){
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, APPConstants.REQUEST_LOCATION_UPDATE_MIN_TIME, APPConstants.REQUEST_LOCATION_UPDATE_MIN_DISTANCE, locationListener);
         } else {
-            ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_CODE_GPS);
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_CODE_GPS);
         }
     }
 
@@ -102,8 +130,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if (requestCode == REQUEST_CODE_GPS) {
-            if(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED){
-                if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED){
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                     locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, APPConstants.REQUEST_LOCATION_UPDATE_MIN_TIME, APPConstants.REQUEST_LOCATION_UPDATE_MIN_DISTANCE, locationListener);
                 }
             } else {
@@ -132,5 +160,47 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    public void obtemPrevisoesV5(Double lat, Double lon) {
+        String endereco = getString(
+                R.string.web_service_url,
+                lat.toString(),
+                lon.toString(),
+                getString(R.string.api_key)
+        );
+        JsonObjectRequest req = new JsonObjectRequest(
+                Request.Method.GET,
+                endereco,
+                null,
+                (response) -> {
+                    lidaComJSON(response);
+                },
+                (error) -> {
+                    Toast.makeText(
+                            MainActivity.this,
+                            getString(R.string.connect_error) + ": " + error.getLocalizedMessage(),
+                            Toast.LENGTH_SHORT
+                    ).show();
+                }
+        );
+        requestQueue.add(req);
+    }
+
+    public void lidaComJSON(JSONObject resultado) {
+
+        try {
+            previsoes.clear();
+
+            JSONArray list = resultado.getJSONArray("list");
+            if (list.length() > 0) {
+                previsoes.addAll(Arrays.asList(gson.fromJson(list.toString(), Forecast[].class)));
+            }
+
+            forecastAdapter.notifyDataSetChanged();
+
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
     }
 }

@@ -24,7 +24,6 @@ public class LocalizacaoDBHelper extends SQLiteOpenHelper {
 
     @Override
     public void onOpen(SQLiteDatabase db) {
-        db.execSQL(LocalizacaoContract.LocalizacaoTable.DROP_TABLE);
-        onCreate(db);
+
     }
 }

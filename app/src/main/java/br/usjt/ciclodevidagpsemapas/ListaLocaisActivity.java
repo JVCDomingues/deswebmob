@@ -1,4 +1,3 @@
-
 package br.usjt.ciclodevidagpsemapas;
 
 import android.content.Intent;
